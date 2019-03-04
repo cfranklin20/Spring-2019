@@ -7,8 +7,6 @@
 # Version: 1.0
 
 from socket import socket, AF_INET, SOCK_DGRAM
-import os
-import sys
 import argparse as ap
 
 parser = ap.ArgumentParser()
@@ -25,58 +23,63 @@ menu = {"1": "Register Device", "2": "Deregister Device",
 # A Data Structure that holds all relevant functions pertaining to the
 class IOTclient:
     s = socket(AF_INET, SOCK_DGRAM)
-    s.bind(('127.0.0.1', 2600))
+
     server = ()
     deviceID = ''
     passPhrase = ''
     MAC = ''
     IP = ''
-    port = 0
+    serverPort = ''
+    port = 2600
 
     def __init__(self, d, pp, m, i, p, s):
         self.deviceID = d
         self.passPhrase = pp
         self.MAC = m
         self.IP = i
-        self.port = p
+        self.serverPort = p
         self.server = s, p
+
+    def bindClient(self):
+        self.s.bind(('127.0.0.1', self.port))
 
     # Send the register message to the server
     def register(self):
-        reg = ("REGISTER\t" + self.deviceID + "\t" + self.passPhrase + "\t" + self.MAC + "\t" + self.IP + "\t" + "2600")
+        reg = ("REGISTER\t" + self.deviceID + "\t" + self.passPhrase + "\t" + self.MAC + "\t" + self.IP + "\t"
+               + str(self.port))
         reg = reg.encode('ascii')
         self.s.sendto(reg, self.server)
 
     # Send the deregister message to the server
     def deregister(self):
         dereg = ("DEREGISTER\t" + self.deviceID + "\t" + self.passPhrase + "\t" + self.MAC + "\t" + self.IP + "\t"
-                 + self.port)
-        dereg.encode('ascii')
+                 + str(self.port))
+        dereg = dereg.encode('ascii')
         self.s.sendto(dereg, self.server)
         self.s.close()
 
     # Send the login message to the server
     def login(self):
-        connection()
-        login = ("LOGIN\t" + deviceID + "\t" + passPhrase + "\t" + IP + "\t" + port)
+        login = ("LOGIN\t" + self.deviceID + "\t" + self.passPhrase + "\t" + self.IP + "\t" + str(self.port))
         login.encode('ascii')
-        s.sendto(login, server)
+        self.s.sendto(login, self.server)
 
     # Send the logoff message to the server
     def logoff(self):
-        logoff = ("LOGOFF\t" + deviceID)
+        logoff = ("LOGOFF\t" + self.deviceID)
         logoff.encode('ascii')
-        s.sendto(logoff, server)
-        s.close()
+        self.s.sendto(logoff, self.server)
+        self.s.close()
 
     # Send data that is requested by the server
     def sendData(self):
         data = ''
 
     def processData(self):
-        data, addr = s.recvfrom(1024)
+        data, addr = self.s.recvfrom(1024)
+        msg = data.decode('ascii')
 
-        print ("received", data, "from", addr)
+        print("received", data, "from", addr)
 
 
 def mainMenu(device):
@@ -96,11 +99,12 @@ def mainMenu(device):
         elif selection == '4':
             device.logoff()
         elif selection == '0':
-            system.exit(0)
+            break
 
 
 def main():
     device = IOTclient(args["device"], "toor", "AA:BB:CC:DD:EE:FF", "192.168.1.10", int(args["port"]), args["server"])
+    device.bindClient()
     mainMenu(device)
 
 
