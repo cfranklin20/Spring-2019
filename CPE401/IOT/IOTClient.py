@@ -8,7 +8,11 @@
 
 from socket import socket, AF_INET, SOCK_DGRAM
 import argparse as ap
+import hashlib
+import sys
+from time import time
 
+# Use Command Line arguments to get pertinent information
 parser = ap.ArgumentParser()
 parser.add_argument("-d", "--device", required=True, help="The name of the device")
 parser.add_argument("-s", "--server", required=True, help="The IP of the server")
@@ -16,6 +20,7 @@ parser.add_argument("-p", "--port", required=True, help="The port that the serve
 
 args = vars(parser.parse_args())
 
+# Menu options for the user to select
 menu = {"1": "Register Device", "2": "Deregister Device",
         "3": "Login", "4": "Logoff", "0": "Quit"}
 
@@ -23,7 +28,7 @@ menu = {"1": "Register Device", "2": "Deregister Device",
 # A Data Structure that holds all relevant functions pertaining to the
 class IOTclient:
     s = socket(AF_INET, SOCK_DGRAM)
-
+    # Class Variables
     server = ()
     deviceID = ''
     passPhrase = ''
@@ -32,6 +37,7 @@ class IOTclient:
     serverPort = ''
     port = 2600
 
+    # Constructor for the Object
     def __init__(self, d, pp, m, i, p, s):
         self.deviceID = d
         self.passPhrase = pp
@@ -40,6 +46,7 @@ class IOTclient:
         self.serverPort = p
         self.server = s, p
 
+    # This binds the client to the listening port
     def bindClient(self):
         self.s.bind(('127.0.0.1', self.port))
 
@@ -49,6 +56,7 @@ class IOTclient:
                + str(self.port))
         reg = reg.encode('ascii')
         self.s.sendto(reg, self.server)
+        self.processMessage()
 
     # Send the deregister message to the server
     def deregister(self):
@@ -56,34 +64,88 @@ class IOTclient:
                  + str(self.port))
         dereg = dereg.encode('ascii')
         self.s.sendto(dereg, self.server)
-        self.s.close()
+        self.processMessage()
 
     # Send the login message to the server
     def login(self):
         login = ("LOGIN\t" + self.deviceID + "\t" + self.passPhrase + "\t" + self.IP + "\t" + str(self.port))
-        login.encode('ascii')
+        login = login.encode('ascii')
         self.s.sendto(login, self.server)
+        self.processMessage()
 
     # Send the logoff message to the server
     def logoff(self):
         logoff = ("LOGOFF\t" + self.deviceID)
-        logoff.encode('ascii')
+        logoff = logoff.encode('ascii')
         self.s.sendto(logoff, self.server)
-        self.s.close()
+        self.processMessage()
 
     # Send data that is requested by the server
-    def sendData(self):
-        data = ''
+    def sendData(self, dcode, length, data):
 
-    def processData(self):
+        timeStamp = int(time())
+        reply = ("DATA\t" + dcode + '\t' + self.deviceID + '\t' + str(timeStamp) + '\t' + length + '\t' + data)
+        reply = reply.encode('ascii')
+        self.s.sendto(reply, self.server)
+
+    # This function processes the query message and will be fully implemented when more is known
+    def processQuery(self, msg):
+        if msg[1] == '':
+            dcode = 0
+            data = "Sensor Data"
+            length = data.count(data)
+            self.sendData(dcode, length, data)
+
+    # This is a function to process the ACK message that comes from the server
+    def processACK(self, msg):
+        if msg[1] == '00':
+            print("Device Registered")
+        elif msg[1] == '01':
+            print("Device Previously Registered")
+        elif msg[1] == '02':
+            print("IP Changed")
+        elif msg[1] == '12':
+            print("IP Already in Use")
+        elif msg[1] == '13':
+            print("MAC Address Already in use")
+        elif msg[1] == '20':
+            print("Device Deregistered")
+            self.s.close()
+            sys.exit(1)
+        elif msg[1] == '21':
+            print("Device did not exist")
+            self.s.close()
+        elif msg[1] == '30':
+            print("Device is already registered with another MAC or IP")
+            self.s.close()
+        elif msg[1] == '31':
+            print("Device is not registered")
+        elif msg[1] == '50':
+            print("Device Data received")
+        elif msg[1] == '51':
+            print("Device is not registered")
+        elif msg[1] == '70':
+            print("Device is logged on")
+        elif msg[1] == '80':
+            print("Device id logged off")
+            self.s.close()
+            sys.exit(1)
+
+    # Once a message is sent, this waits for a reply
+    def processMessage(self):
         data, addr = self.s.recvfrom(1024)
         msg = data.decode('ascii')
+        newMsg = msg.split('\t')
+        if newMsg[0] == "QUERY":
+            self.processQuery(newMsg)
+        elif newMsg[0] == "ACK":
+            self.processACK(newMsg)
 
-        print("received", data, "from", addr)
+        # print("received", newMsg, "from", addr)
 
 
+# The main menu for the program
 def mainMenu(device):
-
     while True:
         options = menu.keys()
         print("Choose a function to perform:")
@@ -102,8 +164,10 @@ def mainMenu(device):
             break
 
 
+# Main function to run the program
 def main():
-    device = IOTclient(args["device"], "toor", "AA:BB:CC:DD:EE:FF", "192.168.1.10", int(args["port"]), args["server"])
+    # Initialize the device with values
+    device = IOTclient(args["device"], "toor", "BB:CC:DD:EE:FF:GG", "192.168.1.20", int(args["port"]), args["server"])
     device.bindClient()
     mainMenu(device)
 
