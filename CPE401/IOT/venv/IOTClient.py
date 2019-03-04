@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 
 # Program: An IOT client implementation for University of Nevada, Reno CPE 401
 # Filename: IOT Client.py
@@ -9,16 +9,31 @@
 from socket import socket, AF_INET, SOCK_DGRAM
 import os
 import sys
+import argparse as ap
+import datetime
+
+parser = ap.ArgumentParser()
+parser.add_argument("-d","--device-name",required=True, help="The name of the device")
+parser.add_argument("-s","--server",required=True, help="The IP of the server")
+parser.add_argument("-p","--port",required=True, help="The port that the server is on")
+
+args = vars(parser.parse_args())
 
 # A Data Structure that holds all relevant functions pertaining to the
 class client:
+
     s = socket(AF_INET, SOCK_DGRAM)
-    server = ('127.0.0.1', 2500)
-    deviceID =
-    passPhrase =
-    MAC =
-    IP =
-    port = 2500
+    server = (args["server"],args["port"])
+    deviceID = args["device-name"]
+    passPhrase = ''
+    MAC = ''
+    IP = ''
+    port = ''
+
+    def __init__(self,pp,m,i):
+        self.passPhrase = pp
+        self.MAC = m
+        self.IP = i
 
     # Bind the socket to a port given by the OS
     def connection(self):
@@ -40,19 +55,16 @@ class client:
         connection()
         login = ("LOGIN\t" + deviceID + "\t" + passPhrase + "\t" + IP + "\t" + port)
         s.sendto(login, server)
-        print("Working on functionality")
 
     # Send the logoff message to the server
     def logoff(self):
         logoff = ("LOGOFF\t" + deviceID)
         s.sendto(logoff, server)
         s.close()
-        print("Working on functionality")
 
     # Send data that is requested by the server
     def sendData(self):
         data =
-        print ("Function to send data")
 
     def processData(self):
         data, addr = s.recvfrom(1024)
