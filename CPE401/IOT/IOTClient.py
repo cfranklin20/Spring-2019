@@ -17,6 +17,7 @@ parser = ap.ArgumentParser()
 parser.add_argument("-d", "--device", required=True, help="The name of the device")
 parser.add_argument("-s", "--server", required=True, help="The IP of the server")
 parser.add_argument("-p", "--port", required=True, help="The port that the server is on")
+parser.add_argument("-dp", "--device_port", required=True, help="The device listening port")
 
 args = vars(parser.parse_args())
 
@@ -35,16 +36,17 @@ class IOTclient:
     MAC = ''
     IP = ''
     serverPort = ''
-    port = 2600
+    port = 0
 
     # Constructor for the Object
-    def __init__(self, d, pp, m, i, p, s):
+    def __init__(self, d, pp, m, i, p, s, dp):
         self.deviceID = d
         self.passPhrase = pp
         self.MAC = m
         self.IP = i
         self.serverPort = p
         self.server = s, p
+        self.port = int(dp)
 
     # This binds the client to the listening port
     def bindClient(self):
@@ -99,17 +101,17 @@ class IOTclient:
     # This is a function to process the ACK message that comes from the server
     def processACK(self, msg):
         if msg[1] == '00':
-            print("Device Registered")
+            print("Device " + msg[2] + " Registered")
         elif msg[1] == '01':
-            print("Device Previously Registered")
+            print("Device " + msg[2] + " Previously Registered")
         elif msg[1] == '02':
-            print("IP Changed")
+            print(msg[2] + "'s IP Changed")
         elif msg[1] == '12':
             print("IP Already in Use")
         elif msg[1] == '13':
             print("MAC Address Already in use")
         elif msg[1] == '20':
-            print("Device Deregistered")
+            print("Device " + msg[2] + " Deregistered")
             self.s.close()
             sys.exit(1)
         elif msg[1] == '21':
@@ -167,7 +169,8 @@ def mainMenu(device):
 # Main function to run the program
 def main():
     # Initialize the device with values
-    device = IOTclient(args["device"], "toor", "BB:CC:DD:EE:FF:GG", "192.168.1.20", int(args["port"]), args["server"])
+    device = IOTclient(args["device"], "toor", "BB:CC:DD:EE:FF:GG", "192.168.1.10",
+                       int(args["port"]), args["server"], args["device_port"])
     device.bindClient()
     mainMenu(device)
 
