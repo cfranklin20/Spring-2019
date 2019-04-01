@@ -8,6 +8,7 @@
 
 from socket import socket, AF_INET, SOCK_STREAM, SOCK_DGRAM, gethostbyname, gethostname
 from threading import Thread, Timer
+import sqlite3
 import argparse as ap
 import hashlib
 import sys
@@ -37,6 +38,8 @@ class IOTclient:
     # Class Variables
     hostname = gethostname()
     IP = gethostbyname(hostname)
+    conn = sqlite3.connect("IOT.db")
+    h = hashlib.sha256()
 
     # Constructor for the Object
     def __init__(self, d, pp, m, p, s):
@@ -82,9 +85,35 @@ class IOTclient:
         reply = ("DATA\t" + dcode + '\t' + self.deviceID + '\t' + str(timeStamp) + '\t' + str(length) + '\t' + data)
         reply = reply.encode('ascii')
         if client:
-            self.sendClientMessage(reply,self.addr)
+            self.sendClientMessage(reply, self.addr)
         else:
             self.sendServerMessage(reply)
+
+    def queryDevice(self):
+        timeStamp = int(time())
+        cur = self.conn.cursor()
+        sql = '''SELECT * FROM registration where active=?'''
+        cur.execute(sql, (1,))
+        devices = cur.fetchall()
+        if len(devices) > 0:
+            print("Active Devices:")
+            i = 0
+            for device in range(len(devices)):
+                if devices[device][1] == self.deviceID:
+                    j = 0
+                else:
+                    print(i + 1, ':', devices[device][1])
+                    i += 1
+            selection = input("Choose a device to query:")
+        else:
+            print("No Active Devices")
+            return
+        addr = (devices[int(selection) - 1][4], devices[int(selection)-1][5])
+        param = devices[int(selection) - 1][1]
+        code = "01"
+        msg = ("QUERY\t" + code + "\t" + self.deviceID + "\t" + str(timeStamp) + "\t" + param)
+        msgE = msg.encode('ascii')
+        self.sendClientMessage(msgE, addr)
 
     # This function processes the query message and will be fully implemented when more is known
     def processQuery(self, msg):
@@ -98,6 +127,31 @@ class IOTclient:
             data = "Test Data"
             length = data.count(data)
             self.sendData(dcode, length, data, True)
+
+    def checkStatus(self, addr):
+        while True:
+            print ("Entering Timer")
+            timer = Timer(5.0, self.sendStatus, args=[addr])
+            timer.start()
+
+    def sendStatus(self, addr):
+        timeStamp = int(time)
+        message = "Checking Status"
+        length = len(message)
+        scode = "01"
+        msg = ("STATUS\t" + scode + "\t" + self.deviceID + "\t" + str(timeStamp) + "\t" + str(length) + "\t" + message)
+        msgE = msg.encode('ascii')
+        self.udpClient.sendto(msgE, addr)
+
+    def clientACK(self, addr, code, msg):
+        timeStamp = int(time())
+        msg = self.remakeString(msg)
+        tempMsg = msg.encode('ascii')
+        self.h.update(tempMsg)
+        hashed = self.h.hexdigest()
+        message = ("ACK\t" + code + '\t' + self.deviceID + '\t' + str(timeStamp) + '\t' + hashed)
+        messageE = message.encode('ascii')
+        self.udpClient.sendto(messageE, addr)
 
     # This is a function to process the ACK message that comes from the server
     def processServerACK(self, msg):
@@ -137,7 +191,7 @@ class IOTclient:
     # Once a message is sent, this waits for a reply
     def processServerMessage(self):
         while True:
-           # try:
+            try:
                 data = self.tcpClient.recv(1024)
                 msg = data.decode('ascii')
                 newMsg = msg.split('\t')
@@ -146,37 +200,48 @@ class IOTclient:
                     self.processQuery(newMsg)
                 elif newMsg[0] == "ACK":
                     self.processServerACK(newMsg)
-           # except:
-             #   print("Connection is closed or unavailable")
-            #    sys.exit(1)
+            except:
+                print("Connection is closed or unavailable")
+                sys.exit(1)
 
     def processClientMessage(self):
         while True:
-            data, self.addr = self.udpClient.recvfrom(1024)
+            data, addr = self.udpClient.recvfrom(1024)
+            print("Recieved connection from: ", addr)
+            #self.checkStatus(addr)
             msg = data.decode('ascii')
             newMsg = msg.split('\t')
             if newMsg[0] == "QUERY":
                 self.processQuery(newMsg)
             elif newMsg[0] == "ACK":
                 self.processClientACK(newMsg)
+            elif newMsg[0] == "DATA":
+                self.clientACK(addr, "50", newMsg)
+            elif newMsg == "STATUS":
+                self.clientACK(addr, "40", newMsg)
 
     def sendServerMessage(self, msg):
-        #try:
+        try:
             self.tcpClient.send(msg)
-        #except:
-        #    print("Socket has been closed or Server is offline, closing connection")
-         #   self.tcpClient.close()
-        #    sys.exit(1)
+        except:
+            print("Socket has been closed or Server is offline, closing connection")
+            self.tcpClient.close()
+            sys.exit(1)
 
     def sendClientMessage(self, msg, addr):
         self.udpClient.sendto(msg, addr)
 
     def serverconnect(self):
-        #try:
+        try:
             self.tcpClient.connect(self.server)
-       # except:
-           # print("Server is offline")
-          #  sys.exit(1)
+        except:
+            print("Server is offline")
+            sys.exit(1)
+
+    def remakeString(self, string):
+        s = '\t'
+        s = s.join(string)
+        return s
 
 # The main menu for the program
 def mainMenu(device):
@@ -194,6 +259,8 @@ def mainMenu(device):
             device.login()
         elif selection == '4':
             device.logoff()
+        elif selection == '5':
+            device.queryDevice()
         elif selection == '0':
             device.logoff()
             break
@@ -222,8 +289,8 @@ def main():
     tcpListener.start()
     udpListener.start()
     mainMenu(device)
-    tcpListener.join(1)
-    udpListener.join(1)
+    tcpListener.join(0.1)
+    udpListener.join(0.1)
     device.tcpClient.close()
 
 

@@ -22,22 +22,13 @@ args = vars(parser.parse_args())
 menu = {"1": "Query Device", "0": "Close Server"}
 
 
-class MyThread(Thread):
-    def __init__(self):
-        thread = Thread(target=self.run(), args=())
-        thread.start()
-
-    def run(self):
-        print("test thread")
-
-
 class IOTserver:
     tcpServer = socket(AF_INET, SOCK_STREAM)
     tcpServer.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
     hostname = gethostname()
     TCP_IP = gethostbyname(hostname)
     TCP_PORT = 0
-    print(TCP_IP)
+    print("Server at: ", TCP_IP)
     h = hashlib.sha256()
     addr = ''
     threads = []
@@ -68,29 +59,31 @@ class IOTserver:
         timeStamp = int(time())
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
-        sql = '''SELECT * FROM registration'''
-        cur.execute(sql,)
+        sql = '''SELECT * FROM registration where active=?'''
+        cur.execute(sql, (1,))
         devices = cur.fetchall()
-        i = 0
-        print("Active Devices:")
-        for device in range(len(devices)):
-            if devices[device][6] == 1:
+        if len(devices) > 0:
+            print("Active Devices:")
+            i = 0
+            for device in range(len(devices)):
+                print(i + 1, ':', devices[device][1])
                 i += 1
-                print(i, ':', devices[device][1])
-
-        if i >= 1:
             selection = input("Choose a device to query:")
         else:
             print("No Active Devices")
             return
-        deviceID = "Server"
-        param = devices[int(selection) - 1][1]
-        connect = self.connectionQueue[int(selection) - 1]
-        msg = ("QUERY\t" + code + "\t" + deviceID + "\t" + str(timeStamp) + "\t" + param)
-        msg = msg.encode('ascii')
-        connect.send(msg)
-        cur.close()
-        conn.close()
+
+        if selection == "0":
+            return
+        else:
+            deviceID = "Server"
+            param = devices[int(selection) - 1][1]
+            connect = self.connectionQueue[int(selection) - 1]
+            msg = ("QUERY\t" + code + "\t" + deviceID + "\t" + str(timeStamp) + "\t" + param)
+            msg = msg.encode('ascii')
+            connect.send(msg)
+            cur.close()
+            conn.close()
 
     # Registers the device into the database
     def registerDevice(self, data, connect):
@@ -290,7 +283,7 @@ class IOTserver:
         elif msg[0] == "QUERY":
             self.processQuery(msg, connect)
 
-    def processData(self, msg,connect):
+    def processData(self, msg, connect):
         if msg[1] == '01':
             msgE = self.remakeString(msg)
             self.ackMessage("50", msg[2], msgE, connect)
@@ -299,8 +292,7 @@ class IOTserver:
         if msg[1] == '01':
             self.sendData(msg)
 
-    def sendData(self,msg):
-
+    def sendData(self, msg):
         self.lookup()
 
     # Listens on the port for data
@@ -330,7 +322,7 @@ class IOTserver:
                 self.queryMessage()
             elif selection == '0':
                 for t in self.threads:
-                    t.join(1)
+                    t.join(0.1)
                 break
 
 
@@ -340,7 +332,7 @@ def main():
     tcpListener = Thread(target=server.acceptConnection, daemon=True)
     tcpListener.start()
     server.menu()
-    tcpListener.join(1)
+    tcpListener.join(0.1)
 
 
 if __name__ == "__main__":
