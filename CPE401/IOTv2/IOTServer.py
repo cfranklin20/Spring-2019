@@ -6,12 +6,13 @@
 # Date Created: 27 Feb 2019
 # Version: 1.0
 
-from socket import socket, getfqdn, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, gethostname, gethostbyname
+from socket import socket, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, gethostname, gethostbyname
 import sqlite3
 from time import time
 from argparse import ArgumentParser
 import hashlib
 from threading import Thread
+import queue
 
 # Command line arguments for the port to start the server on
 parser = ArgumentParser()
@@ -41,6 +42,7 @@ class IOTserver:
     addr = ''
     threads = []
     tcpListener = []
+    connectionQueue = []
     # Take the command line port and give it to the server
 
     def __init__(self, p):
@@ -83,6 +85,7 @@ class IOTserver:
             return
         deviceID = "Server"
         param = devices[int(selection) - 1][1]
+        connect = self.connectionQueue[int(selection) - 1]
         msg = ("QUERY\t" + code + "\t" + deviceID + "\t" + str(timeStamp) + "\t" + param)
         msg = msg.encode('ascii')
         connect.send(msg)
@@ -287,12 +290,12 @@ class IOTserver:
         elif msg[0] == "QUERY":
             self.processQuery(msg, connect)
 
-    def processData(self, msg):
+    def processData(self, msg,connect):
         if msg[1] == '01':
             msgE = self.remakeString(msg)
-            self.ackMessage("50", msg[2], msgE)
+            self.ackMessage("50", msg[2], msgE, connect)
 
-    def processQuery(self, msg):
+    def processQuery(self, msg, connect):
         if msg[1] == '01':
             self.sendData(msg)
 
@@ -303,8 +306,9 @@ class IOTserver:
     # Listens on the port for data
     def acceptConnection(self):
         while True:
-            self.tcpServer.listen()
+            self.tcpServer.listen(5)
             (connect, (ip, port)) = self.tcpServer.accept()
+            self.connectionQueue.append(connect)
             newthread = Thread(target=self.recieveData, args=(connect,), daemon=True)
             newthread.start()
             self.threads.append(newthread)
