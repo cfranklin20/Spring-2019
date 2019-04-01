@@ -7,7 +7,6 @@
 # Version: 1.0
 
 from socket import socket, getfqdn, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, gethostname, gethostbyname
-from socketserver import ThreadingMixIn
 import sqlite3
 from time import time
 from argparse import ArgumentParser
@@ -42,7 +41,6 @@ class IOTserver:
     addr = ''
     threads = []
     tcpListener = []
-    connect = ''
     # Take the command line port and give it to the server
 
     def __init__(self, p):
@@ -53,14 +51,14 @@ class IOTserver:
         self.tcpServer.bind((self.TCP_IP, self.TCP_PORT))
 
     # Generates the ACK message to send to the device
-    def ackMessage(self, code, deviceID, msg):
+    def ackMessage(self, code, deviceID, msg, connect):
         timeStamp = int(time())
         tempMsg = msg.encode('ascii')
         self.h.update(tempMsg)
         hashed = self.h.hexdigest()
         message = ("ACK\t" + code + '\t' + deviceID + '\t' + str(timeStamp) + '\t' + hashed)
         messageE = message.encode('ascii')
-        self.connect.send(messageE)
+        connect.send(messageE)
 
     # Generates the query message for data requested by the server
     def queryMessage(self):
@@ -87,12 +85,12 @@ class IOTserver:
         param = devices[int(selection) - 1][1]
         msg = ("QUERY\t" + code + "\t" + deviceID + "\t" + str(timeStamp) + "\t" + param)
         msg = msg.encode('ascii')
-        self.connect.send(msg)
+        connect.send(msg)
         cur.close()
         conn.close()
 
     # Registers the device into the database
-    def registerDevice(self, data):
+    def registerDevice(self, data, connect):
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
         device = self.lookup(data[1], '', '')
@@ -105,7 +103,7 @@ class IOTserver:
 
             # Check to see if the MAC address is attached to another device
             if device[1][0][3] == data[3] and device[1][0][1] != data[1]:
-                self.ackMessage('13', data[1], msg)
+                self.ackMessage('13', data[1], msg, connect)
 
             # Update the IP if the IP is different but the device is the same
             # elif device[1][0][4] != data[4] and device[1][0][1] == data[1]:
@@ -115,7 +113,7 @@ class IOTserver:
 
             # If all of these checks are passed, it is the same device trying to register
             else:
-                self.ackMessage('01', data[1], msg)
+                self.ackMessage('01', data[1], msg, connect)
 
         # If the device is not in the database, check to make sure the mac and IP aren't being reused
         elif not device[0]:
@@ -128,7 +126,7 @@ class IOTserver:
             #    self.ackMessage('12', data[1], msg, self.addr)
 
             if mac[0]:
-                self.ackMessage('13', data[1], msg)
+                self.ackMessage('13', data[1], msg, connect)
 
             # Device is not in the database, add it to the database
             # elif ip[0] == False and mac[0] == False:
@@ -140,7 +138,7 @@ class IOTserver:
                 cur.execute(sql, insertData)
                 conn.commit()
                 msg = self.remakeString(data)
-                self.ackMessage('00', data[1], msg)
+                self.ackMessage('00', data[1], msg, connect)
                 cur.close()
                 conn.close()
 
@@ -151,7 +149,7 @@ class IOTserver:
         return s
 
     # This function removes a device from the database
-    def deregisterDevice(self, data):
+    def deregisterDevice(self, data, connect):
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
         deviceName = data[1]
@@ -162,14 +160,14 @@ class IOTserver:
             cur.execute(sql, (deviceName,))
             conn.commit()
             msg = self.remakeString(data)
-            self.ackMessage('20', data[1], msg)
+            self.ackMessage('20', data[1], msg, connect)
             cur.close()
             conn.close()
 
         # Device is not in the database
         elif not device[0]:
             msg = self.remakeString(data)
-            self.ackMessage('21', data[1], msg)
+            self.ackMessage('21', data[1], msg, connect)
 
     # Looks up a device name, IP, or MAC in the database
     def lookup(self, deviceName, ip, mac):
@@ -231,7 +229,7 @@ class IOTserver:
         return exists, rows
 
     # Logs in the device
-    def loginDevice(self, data):
+    def loginDevice(self, data, connect):
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
         deviceName = data[1]
@@ -249,12 +247,12 @@ class IOTserver:
                 conn.commit()
                 cur.close()
                 conn.close()
-                self.ackMessage('70', deviceName, msg)
+                self.ackMessage('70', deviceName, msg, connect)
         else:
-            self.ackMessage('31', deviceName, msg)
+            self.ackMessage('31', deviceName, msg, connect)
 
     # Logs off the device from the server
-    def logoffDevice(self, data):
+    def logoffDevice(self, data, connect):
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
         deviceName = data[1]
@@ -268,47 +266,53 @@ class IOTserver:
                 conn.commit()
                 cur.close()
                 conn.close()
-                self.ackMessage('80', deviceName, msg)
+                self.ackMessage('80', deviceName, msg, connect)
         else:
-            self.ackMessage('31', deviceName, msg)
+            self.ackMessage('31', deviceName, msg, connect)
 
     # Processes the message that the client sends
-    def processMessage(self, data):
+    def processMessage(self, data, connect):
         tempData = data.decode('ascii')
         msg = tempData.split('\t')
         if msg[0] == 'REGISTER':
-            self.registerDevice(msg)
+            self.registerDevice(msg, connect)
         elif msg[0] == "DEREGISTER":
-            self.deregisterDevice(msg)
+            self.deregisterDevice(msg, connect)
         elif msg[0] == "LOGIN":
-            self.loginDevice(msg)
+            self.loginDevice(msg, connect)
         elif msg[0] == "LOGOFF":
-            self.logoffDevice(msg)
+            self.logoffDevice(msg, connect)
         elif msg[0] == "DATA":
-            print ("Recieved Data")
-            self.processData(msg)
+            self.processData(msg, connect)
         elif msg[0] == "QUERY":
-            print ("Query")
+            self.processQuery(msg, connect)
 
     def processData(self, msg):
         if msg[1] == '01':
             msgE = self.remakeString(msg)
             self.ackMessage("50", msg[2], msgE)
 
+    def processQuery(self, msg):
+        if msg[1] == '01':
+            self.sendData(msg)
+
+    def sendData(self,msg):
+
+        self.lookup()
+
     # Listens on the port for data
     def acceptConnection(self):
-        #print('server at', getfqdn(''))
         while True:
             self.tcpServer.listen()
-            (self.connect, (ip, port)) = self.tcpServer.accept()
-            newthread = Thread(target=self.recieveData, daemon=True)
+            (connect, (ip, port)) = self.tcpServer.accept()
+            newthread = Thread(target=self.recieveData, args=(connect,), daemon=True)
             newthread.start()
             self.threads.append(newthread)
 
-    def recieveData(self):
+    def recieveData(self, connect):
         while True:
-            data = self.connect.recv(2048)
-            self.processMessage(data)
+            data = connect.recv(2048)
+            self.processMessage(data, connect)
 
     # Menu for the server to send queries
     def menu(self):
