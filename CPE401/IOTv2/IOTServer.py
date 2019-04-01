@@ -6,7 +6,7 @@
 # Date Created: 27 Feb 2019
 # Version: 1.0
 
-from socket import socket, getfqdn, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR
+from socket import socket, getfqdn, AF_INET, SOCK_STREAM, SOL_SOCKET, SO_REUSEADDR, gethostname, gethostbyname
 from socketserver import ThreadingMixIn
 import sqlite3
 from time import time
@@ -34,8 +34,10 @@ class MyThread(Thread):
 class IOTserver:
     tcpServer = socket(AF_INET, SOCK_STREAM)
     tcpServer.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-    TCP_IP = '127.0.0.1'
+    hostname = gethostname()
+    TCP_IP = gethostbyname(hostname)
     TCP_PORT = 0
+    print(TCP_IP)
     h = hashlib.sha256()
     addr = ''
     threads = []
@@ -48,7 +50,7 @@ class IOTserver:
 
     # Starts the server and connects to the Database
     def startServer(self):
-        self.tcpServer.bind(('127.0.0.1', self.TCP_PORT))
+        self.tcpServer.bind((self.TCP_IP, self.TCP_PORT))
 
     # Generates the ACK message to send to the device
     def ackMessage(self, code, deviceID, msg):
@@ -69,20 +71,26 @@ class IOTserver:
         sql = '''SELECT * FROM registration'''
         cur.execute(sql,)
         devices = cur.fetchall()
-        i = 1
+        i = 0
         print("Active Devices:")
         for device in range(len(devices)):
             if devices[device][6] == 1:
-                print(i, ':', devices[device][1])
                 i += 1
-        selection = input("Choose a device to query:")
+                print(i, ':', devices[device][1])
+
+        if i >= 1:
+            selection = input("Choose a device to query:")
+        else:
+            print("No Active Devices")
+            return
         deviceID = "Server"
         param = devices[int(selection) - 1][1]
-        msg = ("QUERY\t" + code + deviceID + str(timeStamp) + param)
+        msg = ("QUERY\t" + code + "\t" + deviceID + "\t" + str(timeStamp) + "\t" + param)
         msg = msg.encode('ascii')
         self.connect.send(msg)
         cur.close()
         conn.close()
+
     # Registers the device into the database
     def registerDevice(self, data):
         conn = sqlite3.connect('IOT.db')
@@ -149,7 +157,7 @@ class IOTserver:
         deviceName = data[1]
         device = self.lookup(deviceName, '', '')
         # Check if the device is in the database
-        if device[0] == True:
+        if device[0]:
             sql = 'DELETE FROM registration where deviceName=?'
             cur.execute(sql, (deviceName,))
             conn.commit()
@@ -159,7 +167,7 @@ class IOTserver:
             conn.close()
 
         # Device is not in the database
-        elif device[0] == False:
+        elif not device[0]:
             msg = self.remakeString(data)
             self.ackMessage('21', data[1], msg)
 
@@ -279,6 +287,13 @@ class IOTserver:
         elif msg[0] == "DATA":
             print ("Recieved Data")
             self.processData(msg)
+        elif msg[0] == "QUERY":
+            print ("Query")
+
+    def processData(self, msg):
+        if msg[1] == '01':
+            msgE = self.remakeString(msg)
+            self.ackMessage("50", msg[2], msgE)
 
     # Listens on the port for data
     def acceptConnection(self):
@@ -286,7 +301,6 @@ class IOTserver:
         while True:
             self.tcpServer.listen()
             (self.connect, (ip, port)) = self.tcpServer.accept()
-            #print ("Connection from", ip, ":", str(port))
             newthread = Thread(target=self.recieveData, daemon=True)
             newthread.start()
             self.threads.append(newthread)
@@ -307,6 +321,8 @@ class IOTserver:
             if selection == '1':
                 self.queryMessage()
             elif selection == '0':
+                for t in self.threads:
+                    t.join(1)
                 break
 
 
