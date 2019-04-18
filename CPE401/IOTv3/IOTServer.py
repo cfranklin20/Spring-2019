@@ -12,7 +12,7 @@ from time import time
 from argparse import ArgumentParser
 import hashlib
 from threading import Thread
-import queue
+import logging
 
 # Command line arguments for the port to start the server on
 parser = ArgumentParser()
@@ -25,15 +25,22 @@ menu = {"1": "Query Device", "0": "Close Server"}
 class IOTserver:
     tcpServer = socket(AF_INET, SOCK_STREAM)
     tcpServer.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+    tcpAWS = socket(AF_INET, SOCK_STREAM)
     hostname = gethostname()
     TCP_IP = gethostbyname(hostname)
     TCP_PORT = 0
+    AWS_IP = "ec2-18-222-250-95.us-east-2.compute.amazonaws.com"
+    AWS_PORT = 59000
     print("Server at: ", TCP_IP)
     h = hashlib.sha256()
     addr = ''
     threads = []
     tcpListener = []
     connectionQueue = []
+    logging.basicConfig(filename="Activity.log", filemode="a",
+                        format='%(asctime)s - %(message)s',
+                        datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
+
     # Take the command line port and give it to the server
 
     def __init__(self, p):
@@ -42,6 +49,10 @@ class IOTserver:
     # Starts the server and connects to the Database
     def startServer(self):
         self.tcpServer.bind((self.TCP_IP, self.TCP_PORT))
+        self.tcpAWS.bind((self.TCP_IP, 6701))
+        self.tcpAWS.connect((self.AWS_IP, self.AWS_PORT))
+        logging.info("Server is Online at %s:%s", self.TCP_IP, self.TCP_PORT)
+        logging.info("Server connected to AWS")
 
     # Generates the ACK message to send to the device
     def ackMessage(self, code, deviceID, msg, connect):
@@ -127,12 +138,16 @@ class IOTserver:
             # Device is not in the database, add it to the database
             # elif ip[0] == False and mac[0] == False:
             elif not mac[0]:
+                logging.info('%s has registered', data[1])
                 # SQL command to add the device to the database
                 sql = ''' INSERT INTO registration(deviceName, passphrase, mac, active) 
                              VALUES(?,?,?,?) '''
                 insertData = (data[1], data[2], data[3], 0)
                 cur.execute(sql, insertData)
                 conn.commit()
+                msgD = ("DATA\t" + '02' + "\t" + self.AWS_IP + "\t" + str(self.AWS_PORT))
+                msgE = msgD.encode('ascii')
+                connect.send(msgE)
                 msg = self.remakeString(data)
                 self.ackMessage('00', data[1], msg, connect)
                 cur.close()
@@ -152,6 +167,7 @@ class IOTserver:
         device = self.lookup(deviceName, '', '')
         # Check if the device is in the database
         if device[0]:
+            logging.info("%s has deregistered", data[1])
             sql = 'DELETE FROM registration where deviceName=?'
             cur.execute(sql, (deviceName,))
             conn.commit()
@@ -237,6 +253,7 @@ class IOTserver:
         # Changes the status of the device to active
         if device[0]:
             if device[1][0][2] == data[2] and device[1][0][6] == 0:
+                logging.info("%s has logged in", deviceName)
                 sql = "UPDATE registration SET ip=?, port=?, active=? WHERE deviceName=?"
                 update = (ip, port, 1, deviceName)
                 cur.execute(sql, update)
@@ -256,6 +273,7 @@ class IOTserver:
         device = self.lookup(deviceName, '', '')
         if device[0]:
             if device[1][0][6] == 1:
+                logging.info('%s has logged off', deviceName)
                 sql = "UPDATE registration SET active=? WHERE deviceName=?"
                 update = (0, deviceName)
                 cur.execute(sql, update)
@@ -321,6 +339,8 @@ class IOTserver:
             if selection == '1':
                 self.queryMessage()
             elif selection == '0':
+
+                logging.info('Server is Going Offline')
                 for t in self.threads:
                     t.join(0.1)
                 break
