@@ -13,6 +13,8 @@ from argparse import ArgumentParser
 import hashlib
 from threading import Thread
 import logging
+from Crypto.PublicKey import RSA
+from Crypto import Random
 
 # Command line arguments for the port to start the server on
 parser = ArgumentParser()
@@ -40,6 +42,8 @@ class IOTserver:
     logging.basicConfig(filename="Activity.log", filemode="a",
                         format='%(asctime)s - %(message)s',
                         datefmt='%d-%b-%y %H:%M:%S', level=logging.INFO)
+    RSAPrivateKey = ''
+    RSAPublicKey = ''
 
     # Take the command line port and give it to the server
 
@@ -49,8 +53,11 @@ class IOTserver:
     # Starts the server and connects to the Database
     def startServer(self):
         self.tcpServer.bind((self.TCP_IP, self.TCP_PORT))
-        self.tcpAWS.bind((self.TCP_IP, 6701))
+        self.tcpAWS.bind((self.TCP_IP, 6711))
         self.tcpAWS.connect((self.AWS_IP, self.AWS_PORT))
+        random_generator = Random.new().read
+        self.RSAPrivateKey = RSA.generate(1024, random_generator)
+        self.RSAPublicKey = self.RSAPrivateKey.publickey()
         logging.info("Server is Online at %s:%s", self.TCP_IP, self.TCP_PORT)
         logging.info("Server connected to AWS")
 
@@ -145,7 +152,7 @@ class IOTserver:
                 insertData = (data[1], data[2], data[3], 0)
                 cur.execute(sql, insertData)
                 conn.commit()
-                msgD = ("DATA\t" + '02' + "\t" + self.AWS_IP + "\t" + str(self.AWS_PORT))
+                msgD = ("DATA\t" + '02' + "\t" + self.AWS_IP + "\t" + str(59000))
                 msgE = msgD.encode('ascii')
                 connect.send(msgE)
                 msg = self.remakeString(data)
@@ -169,6 +176,9 @@ class IOTserver:
         if device[0]:
             logging.info("%s has deregistered", data[1])
             sql = 'DELETE FROM registration where deviceName=?'
+            cur.execute(sql, (deviceName,))
+            conn.commit()
+            sql = 'DELETE FROM Keys where deviceName=? '
             cur.execute(sql, (deviceName,))
             conn.commit()
             msg = self.remakeString(data)
@@ -242,10 +252,12 @@ class IOTserver:
 
     # Logs in the device
     def loginDevice(self, data, connect):
+        print("HERE")
         conn = sqlite3.connect('IOT.db')
         cur = conn.cursor()
         deviceName = data[1]
         ip = data[3]
+        print(data[2])
         port = int(data[4])
         msg = self.remakeString(data)
         device = self.lookup(deviceName, '', '')
@@ -286,6 +298,7 @@ class IOTserver:
 
     # Processes the message that the client sends
     def processMessage(self, data, connect):
+        #dec_data = self.RSAPrivateKey.decrypt(data)
         tempData = data.decode('ascii')
         msg = tempData.split('\t')
         if msg[0] == 'REGISTER':
@@ -300,6 +313,8 @@ class IOTserver:
             self.processData(msg, connect)
         elif msg[0] == "QUERY":
             self.processQuery(msg, connect)
+        elif msg[0] == "KEY":
+            self.processKey(msg, connect)
 
     def processData(self, msg, connect):
         if msg[1] == '01':
@@ -309,6 +324,18 @@ class IOTserver:
     def processQuery(self, msg, connect):
         if msg[1] == '01':
             self.sendData(msg)
+
+    def processKey(self, msg, connect):
+        if msg[1] == '01':
+            conn = sqlite3.connect('IOT.db')
+            cur = conn.cursor()
+            sql = '''insert into Keys(deviceName,publicKey) values (?,?)'''
+            keys = (msg[2], msg[3])
+            cur.execute(sql, keys)
+            conn.commit()
+            msg = "DATA\t03\t" + str(self.RSAPublicKey.exportKey("PEM"))
+            msgE = msg.encode('ascii')
+            connect.send(msgE)
 
     def sendData(self, msg):
         self.lookup()

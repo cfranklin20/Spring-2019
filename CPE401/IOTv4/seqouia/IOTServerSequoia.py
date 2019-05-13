@@ -13,6 +13,9 @@ from argparse import ArgumentParser
 import hashlib
 from threading import Thread
 import logging
+import smtplib
+import ssl
+
 
 # Command line arguments for the port to start the server on
 parser = ArgumentParser()
@@ -29,7 +32,7 @@ class IOTserver:
     hostname = gethostname()
     TCP_IP = gethostbyname(hostname)
     TCP_PORT = 0
-    AWS_IP = "ec2-18-222-250-95.us-east-2.compute.amazonaws.com"
+    AWS_IP = "ec2-3-17-14-41.us-east-2.compute.amazonaws.com"
     AWS_PORT = 59000
     print("Server at: ", TCP_IP)
     h = hashlib.sha256()
@@ -344,6 +347,33 @@ class IOTserver:
                 for t in self.threads:
                     t.join(0.1)
                 break
+
+    def sendEmail(self):
+        smtp_server = "smtp.gmail.com"
+        port = 587
+        sender_email = "cfranklin.cpe401@gmail.com"
+        password = "soxxap-marxaw-cyvXu9"
+        receiver_email = sender_email
+        context = ssl.create_default_context()
+        message = """\
+        Subject: Client Info
+        UserID:
+        PublicKey:
+        CloudURL:
+        """
+        try:
+            server = smtplib.SMTP(smtp_server, port)
+            server.ehlo()
+            server.starttls(context)
+            server.ehlo()
+            server.login(sender_email, password)
+            server.sendmail(sender_email, receiver_email, message)
+
+        except Exception as e:
+            print(e)
+
+        finally:
+            server.quit()
 
 
 def main():

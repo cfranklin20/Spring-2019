@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Program: An IOT client implementation for University of Nevada, Reno CPE 401
-# Filename: IOT Client.py
+# Filename: IOT ClientSequoia.py
 # Written By: Clayton Franklin
 # Date Created: 27 Feb 2019
 # Version: 1.0

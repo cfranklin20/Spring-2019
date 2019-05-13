@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Program: An IOT client implementation for University of Nevada, Reno CPE 401
-# Filename: IOT Client.py
+# Filename: IOT ClientSequoia.py
 # Written By: Clayton Franklin
 # Date Created: 27 Feb 2019
 # Version: 1.0
@@ -14,6 +14,8 @@ import hashlib
 import sys
 from time import time
 from random import randint
+from Crypto.PublicKey import RSA
+from Crypto import Random
 
 # Use Command Line arguments to get pertinent information
 parser = ap.ArgumentParser()
@@ -46,6 +48,10 @@ class IOTclient:
     h = hashlib.sha256()
     AWS_IP = ''
     AWS_PORT = 0
+    RSAPrivateKey = ''
+    RSAPublicKey = ''
+    ServerPublicKey = ''
+    passhash = ''
 
     # Constructor for the Object
     def __init__(self, d, id, pp, m, p, s):
@@ -61,23 +67,27 @@ class IOTclient:
         self.tcpClient.bind((self.IP, 0))
         self.udpClient.bind((self.IP, 0))
         self.tcpAWS.bind((self.IP, 0))
+        pass_encode = self.passPhrase.encode('ascii')
+        self.h.update(pass_encode)
+        self.passhash = self.h.hexdigest()
 
     # Send the register message to the server
     def register(self):
-        reg = ("REGISTER\t" + self.deviceName + "\t" + self.passPhrase + "\t" + self.MAC)
+        reg = ("REGISTER\t" + self.deviceName + "\t" + self.passhash + "\t" + self.MAC)
         reg = reg.encode('ascii')
         self.sendServerMessage(reg)
+        self.sendKey()
 
     # Send the deregister message to the server
     def deregister(self):
-        dereg = ("DEREGISTER\t" + self.deviceName + "\t" + self.passPhrase + "\t" + self.MAC)
+        dereg = ("DEREGISTER\t" + self.deviceName + "\t" + self.passhash + "\t" + self.MAC)
         dereg = dereg.encode('ascii')
         self.sendServerMessage(dereg)
 
     # Send the login message to the server
     def login(self):
-        port = self.udpClient.getsockname()
-        login = ("LOGIN\t" + self.deviceName + "\t" + self.passPhrase + "\t" + self.IP + "\t" + str(port[1]))
+        port = self.tcpClient.getsockname()
+        login = ("LOGIN\t" + self.deviceName + "\t" + self.passhash + "\t" + self.IP + "\t" + str(port[1]))
         login = login.encode('ascii')
         self.sendServerMessage(login)
 
@@ -262,12 +272,31 @@ class IOTclient:
             self.tcpAWS.connect((self.AWS_IP, self.AWS_PORT))
             msg = "REGISTER\t" + self.deviceID + "\t" + self.deviceName
             msgE = msg.encode('ascii')
+        if msg[1] == '03':
+            self.ServerPublicKey = RSA.importKey(msg[2])
 
     def sendCloud(self):
         data = input("Enter a message to send to the cloud: ")
         msg = "DATA\t" + self.deviceID + "\t" + data
         msgE = msg.encode('ascii')
         self.tcpAWS.send(msgE)
+
+    def genKeys(self):
+        random_generator = Random.new().read
+        self.RSAPrivateKey = RSA.generate(1024, random_generator)
+        self.RSAPublicKey = self.RSAPrivateKey.publickey()
+        #print(self.RSAPublicKey)
+
+    def sendKey(self):
+        key = self.RSAPublicKey.exportKey("PEM")
+        msg = "KEY\t" + "01\t" + self.deviceName + '\t' + str(key)
+        msgE = msg.encode('ascii')
+        #enc_data = self.encrypt(msgE)
+        self.tcpClient.send(msgE)
+
+    def encrypt(self, string):
+        enc_data = self.ServerPublicKey.encrypt(string, 30)
+        return enc_data
 
 
 # The main menu for the program
@@ -301,6 +330,7 @@ def randomMAC():
             randint(0x00, 0xff),
             randint(0x00, 0xff)]
 
+
 def MACprettyprint(mac):
     return ':'.join(map(lambda x: "%02x" % x, mac))
 
@@ -312,6 +342,7 @@ def main():
     device = IOTclient(args["device"], args["id"], "toor", mac, int(args["port"]), args["server"])
     device.bindClient()
     device.serverconnect()
+    device.genKeys()
     tcpListener = Thread(target=device.processServerMessage, daemon=True)
     udpListener = Thread(target=device.processClientMessage, daemon=True)
     tcpListener.start()

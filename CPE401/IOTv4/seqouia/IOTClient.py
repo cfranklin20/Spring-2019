@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Program: An IOT client implementation for University of Nevada, Reno CPE 401
-# Filename: IOT Client.py
+# Filename: IOT ClientSequoia.py
 # Written By: Clayton Franklin
 # Date Created: 27 Feb 2019
 # Version: 1.0
@@ -262,12 +262,14 @@ class IOTclient:
             self.tcpAWS.connect((self.AWS_IP, self.AWS_PORT))
             msg = "REGISTER\t" + self.deviceID + "\t" + self.deviceName
             msgE = msg.encode('ascii')
+            self.tcpAWS.send(msgE)
 
     def sendCloud(self):
         data = input("Enter a message to send to the cloud: ")
         msg = "DATA\t" + self.deviceID + "\t" + data
         msgE = msg.encode('ascii')
         self.tcpAWS.send(msgE)
+
 
 
 # The main menu for the program
